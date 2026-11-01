@@ -550,6 +550,23 @@ function renderStats() {
     '<tr><th>種類</th><th>MB</th><th>DL s</th><th>展開s</th><th>要素数</th><th>fps</th></tr>' + rows;
 }
 
+// 表示中のオブジェクトの楕円数・ポリゴン数（fps表示用）
+function currentCountText() {
+  const fmt = (n) => Math.round(n).toLocaleString();
+  let gs = 0, poly = 0, hasGs = false, hasPoly = false;
+  for (const s of SLOTS) {
+    const st = stats[s.key];
+    if (!st || st.count == null) continue;
+    if (currentView !== 'all' && currentView !== s.key) continue;
+    if (s.type === 'gs') { gs += st.count; hasGs = true; }
+    else { poly += st.count; hasPoly = true; }
+  }
+  const parts = [];
+  if (hasGs) parts.push(`楕円数: ${fmt(gs)}`);
+  if (hasPoly) parts.push(`ポリゴン数: ${fmt(poly)}`);
+  return parts.length ? '<br><small>' + parts.join('<br>') + '</small>' : '';
+}
+  
 function resetFpsRecords() {
   for (const st of Object.values(stats)) if (st) st.fps = null;
   fpsSkip = true;
@@ -570,7 +587,7 @@ function tickFps() {
   const fps = fpsFrames * 1000 / dt;
   const ms = dt / fpsFrames;
   const c = renderer.domElement;
-  fpsEl.innerHTML = `${fps.toFixed(1)} fps<br><small>${ms.toFixed(2)} ms ・ ${c.width}×${c.height}px</small>`;
+   fpsEl.innerHTML = `${fps.toFixed(1)} fps<br><small>${ms.toFixed(2)} ms ・ ${c.width}×${c.height}px</small>` + currentCountText();
   if (!fpsSkip && currentView !== 'all' && stats[currentView]) {
     const st = stats[currentView];
     st.fps = (st.fps == null) ? fps : st.fps * 0.8 + fps * 0.2;
