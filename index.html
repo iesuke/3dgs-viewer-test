@@ -1,0 +1,747 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<title>spAItial Viewer</title>
+<script src="https://accounts.google.com/gsi/client" async defer></script>
+<style>
+  html, body { margin: 0; height: 100%; overflow: hidden; background: #202024; font-family: "Segoe UI", "Meiryo", sans-serif; }
+  canvas { display: block; touch-action: none; }
+  button { background: #3a3a44; color: #eee; border: 1px solid #555; border-radius: 4px; padding: 4px 8px; font-size: 12px; cursor: pointer; }
+  button:hover { background: #4a4a56; }
+  button.active { background: #2f6fd6; border-color: #5b8fe6; }
+  button.empty { opacity: 0.4; }
+  button.primary { background: #2f6fd6; border-color: #5b8fe6; font-weight: bold; }
+
+  #menu-btn { position: absolute; top: calc(10px + env(safe-area-inset-top)); left: 10px; z-index: 10;
+              width: 44px; height: 44px; font-size: 20px; background: rgba(20,20,24,0.88); }
+  #fps { position: absolute; top: calc(10px + env(safe-area-inset-top)); right: 10px; z-index: 10;
+         background: rgba(20,20,24,0.85); color: #7fff7f; font-family: Consolas, monospace; font-size: 20px;
+         padding: 6px 12px; border-radius: 8px; text-align: right; pointer-events: none; }
+  #fps small { font-size: 11px; color: #ccc; }
+  #switchbar { position: absolute; left: 50%; transform: translateX(-50%); bottom: calc(14px + env(safe-area-inset-bottom)); z-index: 10;
+               display: flex; align-items: center; gap: 8px; background: rgba(20,20,24,0.88); border-radius: 24px; padding: 4px 6px; }
+  #switchbar button { width: 44px; height: 40px; font-size: 16px; border-radius: 20px; }
+  #sw-label { color: #fff; font-size: 14px; min-width: 110px; text-align: center; }
+
+  #panel { position: absolute; top: calc(62px + env(safe-area-inset-top)); left: 10px; z-index: 9; width: 360px;
+           max-height: calc(100% - 140px); overflow-y: auto; touch-action: pan-y;
+           background: rgba(20,20,24,0.9); color: #ddd; font-size: 12px; border-radius: 8px; padding: 10px 12px; box-sizing: border-box; }
+  #panel.closed { display: none; }
+  h1 { font-size: 14px; margin: 0 0 8px; color: #fff; }
+  section { border-top: 1px solid #444; padding: 8px 0; }
+  .title { font-weight: bold; margin-bottom: 6px; color: #fff; }
+  .row { display: flex; align-items: center; gap: 6px; margin: 4px 0; }
+  .row label { width: 110px; flex-shrink: 0; }
+  .row input[type=file] { flex: 1; min-width: 0; font-size: 11px; color: #ccc; }
+  .btns { display: flex; flex-wrap: wrap; gap: 4px; margin: 4px 0; }
+  .hint { color: #999; margin: 4px 0 0; }
+  details summary { cursor: pointer; color: #fff; font-weight: bold; }
+  select { background: #3a3a44; color: #eee; border: 1px solid #555; border-radius: 4px; padding: 3px; }
+  #info { margin: 6px 0 0; font-family: Consolas, monospace; font-size: 11px; color: #aaa; white-space: pre; }
+  #status { margin-top: 6px; color: #ffcc66; min-height: 14px; word-break: break-all; }
+  #stats { width: 100%; border-collapse: collapse; font-family: Consolas, "Meiryo", monospace; font-size: 11px; }
+  #stats th, #stats td { border-bottom: 1px solid #3a3a3a; padding: 3px 3px; text-align: right; }
+  #stats th:first-child, #stats td:first-child { text-align: left; }
+  #stats tr.cur td { color: #7fb2ff; font-weight: bold; }
+
+  @media (pointer: coarse) {
+    #panel button { min-height: 36px; padding: 6px 10px; font-size: 13px; }
+    select { min-height: 32px; }
+  }
+  @media (max-width: 700px) {
+    #panel { top: auto; bottom: 0; left: 0; width: 100%; height: 50%; max-height: none;
+             border-radius: 12px 12px 0 0; padding-bottom: calc(10px + env(safe-area-inset-bottom)); }
+    body.panel-open #switchbar { bottom: calc(50% + 8px); }
+    #fps { font-size: 15px; padding: 4px 8px; }
+    .row label { width: 120px; }
+  }
+</style>
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.178.0/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.178.0/examples/jsm/",
+    "@sparkjsdev/spark": "https://cdn.jsdelivr.net/npm/@sparkjsdev/spark@0.1.10/dist/spark.module.js"
+  }
+}
+</script>
+</head>
+<body>
+<button id="menu-btn">☰</button>
+<div id="fps">-- fps</div>
+<div id="switchbar">
+  <button id="sw-prev">◀</button>
+  <span id="sw-label">-</span>
+  <button id="sw-next">▶</button>
+</div>
+
+<div id="panel">
+  <h1>spAItial Viewer（形式比較）</h1>
+  <section>
+    <div class="title">Google Driveから読み込み</div>
+    <div class="btns"><button id="b-drive" class="primary">Googleでログインして読み込み・計測</button></div>
+    <p class="hint">フォルダ内のファイルを1つずつ順番にダウンロードして計測します（ログイン時間は含みません）</p>
+    <div id="status"></div>
+  </section>
+  <section>
+    <div class="title">表示切替（数字キー / ←→キー）</div>
+    <div class="btns" id="view-btns"></div>
+  </section>
+  <section>
+    <div class="title">比較表</div>
+    <table id="stats"></table>
+    <p class="hint">DL：ダウンロード時間 / 展開：解析と表示準備の時間</p>
+    <div class="btns"><button id="b-fps-reset">fps記録リセット</button></div>
+  </section>
+  <section>
+    <div class="title">オブジェクト操作</div>
+    <div class="btns" id="mode-btns">
+      <button data-mode="translate">移動 [W]</button>
+      <button data-mode="rotate">回転 [E]</button>
+      <button data-mode="scale">拡大縮小 [R]</button>
+    </div>
+    <div class="btns">
+      <button id="b-space">座標系: ローカル [Q]</button>
+      <button id="b-gizmo">ギズモ ON [H]</button>
+    </div>
+    <div class="btns">
+      <button id="b-flip">上下反転</button>
+      <button id="b-center">回転中心を物体中心へ</button>
+      <button id="b-reset">変形リセット</button>
+      <button id="b-fit">視点を合わせる [F]</button>
+    </div>
+  </section>
+  <section>
+    <div class="title">表示設定</div>
+    <div class="row"><label>描画解像度</label>
+      <select id="s-dpr">
+        <option value="1">1x</option>
+        <option value="1.5">1.5x</option>
+        <option value="2">2x</option>
+        <option value="3">3x</option>
+      </select>
+    </div>
+    <div class="row"><input type="checkbox" id="c-wire"><span>メッシュをワイヤーフレーム表示</span></div>
+    <div class="row"><input type="checkbox" id="c-grid" checked><span>グリッド表示</span></div>
+  </section>
+  <section>
+    <details>
+      <summary>端末内のファイルから読み込み</summary>
+      <div id="file-rows"></div>
+      <p class="hint">PCでは画面へのドラッグ＆ドロップも可（DL時間は計測されません）</p>
+    </details>
+  </section>
+  <section>
+    <div class="title">変形の値</div>
+    <pre id="info"></pre>
+  </section>
+</div>
+
+<script type="module">
+// ================== 設定（ここを書き換える） ==================
+const CONFIG = {
+  CLIENT_ID: '355134706458-8uf7sfv88mq8ngb4danooat6q246vtq0.apps.googleusercontent.com',
+  FOLDER_ID: '1QSjkPQWgb1GKWPd_W6xcijEop7OUayh7',
+};
+// ==============================================================
+
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { TransformControls } from 'three/addons/controls/TransformControls.js';
+import { PLYLoader } from 'three/addons/loaders/PLYLoader.js';
+import { OBJLoader } from 'three/addons/loaders/OBJLoader.js';
+import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+
+// ---------- 比較する枠の定義 ----------
+const SLOTS = [
+  { key: 'ply',    label: '3DGS PLY',         short: 'GS PLY',  type: 'gs'   },
+  { key: 'spz',    label: '3DGS SPZ',         short: 'GS SPZ',  type: 'gs'   },
+  { key: 'sog',    label: '3DGS SOG',         short: 'GS SOG',  type: 'gs'   },
+  { key: 'meshHi', label: 'メッシュ(ハイポリ)', short: 'Mesh Hi', type: 'mesh' },
+  { key: 'meshLo', label: 'メッシュ(ローポリ)', short: 'Mesh Lo', type: 'mesh' },
+];
+const SLOT_MAP = Object.fromEntries(SLOTS.map((s) => [s.key, s]));
+const layers = Object.fromEntries(SLOTS.map((s) => [s.key, null]));
+const stats  = Object.fromEntries(SLOTS.map((s) => [s.key, null]));
+
+const isMobile = window.matchMedia('(max-width: 700px)').matches;
+const isTouch  = window.matchMedia('(pointer: coarse)').matches;
+
+// ---------- 3DGSライブラリ(Spark) ----------
+let SplatMesh = null;
+try {
+  ({ SplatMesh } = await import('@sparkjsdev/spark'));
+} catch (e) {
+  console.error(e);
+  setStatus('3DGSライブラリ(Spark)を読み込めませんでした。メッシュのみ使えます。');
+}
+
+// ---------- 基本セットアップ ----------
+const renderer = new THREE.WebGLRenderer({ antialias: false });
+const dprDefault = window.devicePixelRatio >= 2 ? 2 : (window.devicePixelRatio >= 1.5 ? 1.5 : 1);
+renderer.setPixelRatio(dprDefault);
+renderer.setSize(window.innerWidth, window.innerHeight);
+document.body.appendChild(renderer.domElement);
+document.getElementById('s-dpr').value = String(dprDefault);
+
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x202024);
+
+const camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.01, 1000);
+camera.position.set(0, 1.5, 3);
+
+scene.add(new THREE.HemisphereLight(0xffffff, 0x444444, 2.0));
+const dirLight = new THREE.DirectionalLight(0xffffff, 1.5);
+dirLight.position.set(3, 5, 2);
+scene.add(dirLight);
+
+const grid = new THREE.GridHelper(10, 20, 0x666666, 0x333333);
+scene.add(grid);
+const axes = new THREE.AxesHelper(0.5);
+scene.add(axes);
+
+const orbit = new OrbitControls(camera, renderer.domElement);
+orbit.enableDamping = true;
+
+const model = new THREE.Group();
+scene.add(model);
+const offset = new THREE.Vector3();
+let currentView = 'ply';
+
+const tc = new TransformControls(camera, renderer.domElement);
+if (isTouch) tc.size = 1.5;
+tc.attach(model);
+scene.add(tc.getHelper());
+tc.addEventListener('dragging-changed', (e) => { orbit.enabled = !e.value; });
+tc.addEventListener('objectChange', updateInfo);
+
+// ---------- パネル開閉 ----------
+const panel = document.getElementById('panel');
+function setPanel(open) {
+  panel.classList.toggle('closed', !open);
+  document.body.classList.toggle('panel-open', open);
+}
+document.getElementById('menu-btn').addEventListener('click', () => setPanel(panel.classList.contains('closed')));
+setPanel(!isMobile);
+
+// ---------- UI生成 ----------
+const fileRows = document.getElementById('file-rows');
+const viewBtns = document.getElementById('view-btns');
+SLOTS.forEach((s, i) => {
+  const row = document.createElement('div');
+  row.className = 'row';
+  row.innerHTML = `<label>${s.label}</label><input type="file">`;
+  row.querySelector('input').addEventListener('change', (e) => {
+    const file = e.target.files[0];
+    if (file) loadLocal(s.key, file);
+    e.target.value = '';
+  });
+  fileRows.appendChild(row);
+
+  const b = document.createElement('button');
+  b.dataset.view = s.key;
+  b.textContent = `${s.short} [${i + 1}]`;
+  b.addEventListener('click', () => setView(s.key));
+  viewBtns.appendChild(b);
+});
+{
+  const b = document.createElement('button');
+  b.dataset.view = 'all';
+  b.textContent = '全部 [0]';
+  b.addEventListener('click', () => setView('all'));
+  viewBtns.appendChild(b);
+}
+
+// ================== Google Drive 連携 ==================
+let tokenClient = null;
+let accessToken = null;
+let tokenExpiry = 0;
+
+// ログインしてアクセストークンを取得（ボタンを押した直後に呼ぶこと）
+function getToken() {
+  return new Promise((resolve, reject) => {
+    if (accessToken && Date.now() < tokenExpiry) { resolve(accessToken); return; }
+    if (!window.google?.accounts?.oauth2) {
+      reject(new Error('Googleログイン部品の読み込み前です。数秒待って再度押してください'));
+      return;
+    }
+    if (!tokenClient) {
+      tokenClient = google.accounts.oauth2.initTokenClient({
+        client_id: CONFIG.CLIENT_ID,
+        scope: 'https://www.googleapis.com/auth/drive.readonly',
+        callback: () => {},
+      });
+    }
+    tokenClient.callback = (resp) => {
+      if (resp.error) { reject(new Error(resp.error)); return; }
+      accessToken = resp.access_token;
+      tokenExpiry = Date.now() + (Number(resp.expires_in) - 60) * 1000;
+      resolve(accessToken);
+    };
+    tokenClient.error_callback = (err) => reject(new Error(err.type || 'ログインがキャンセルされました'));
+    tokenClient.requestAccessToken();
+  });
+}
+
+async function listFolder(token) {
+  const q = encodeURIComponent(`'${CONFIG.FOLDER_ID}' in parents and trashed = false`);
+  const url = `https://www.googleapis.com/drive/v3/files?q=${q}&fields=files(id,name,size)&pageSize=100`;
+  const res = await fetch(url, { headers: { Authorization: `Bearer ${token}` }, cache: 'no-store' });
+  if (!res.ok) throw new Error(`ファイル一覧の取得に失敗（HTTP ${res.status}）`);
+  return (await res.json()).files || [];
+}
+
+// PLYの先頭8KBだけ取得して種類判定に使う
+async function fetchHead(id, token) {
+  const res = await fetch(`https://www.googleapis.com/drive/v3/files/${id}?alt=media`, {
+    headers: { Authorization: `Bearer ${token}`, Range: 'bytes=0-8191' }, cache: 'no-store'
+  });
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  return new TextDecoder().decode(await res.arrayBuffer());
+}
+
+// ファイル本体をダウンロード（進捗表示つき）
+async function downloadDrive(file, token, onProgress) {
+  const res = await fetch(`https://www.googleapis.com/drive/v3/files/${file.id}?alt=media`, {
+    headers: { Authorization: `Bearer ${token}` }, cache: 'no-store'
+  });
+  if (!res.ok) throw new Error(`ダウンロード失敗（HTTP ${res.status}）`);
+  const total = Number(file.size) || 0;
+  const reader = res.body.getReader();
+  let out = total > 0 ? new Uint8Array(total) : null;
+  const chunks = [];
+  let received = 0;
+  let lastUi = 0;
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    if (out && received + value.length <= out.length) out.set(value, received);
+    else { out = null; chunks.push(value); }
+    received += value.length;
+    const now = performance.now();
+    if (now - lastUi > 150) { onProgress(received, total); lastUi = now; }
+  }
+  if (out) return (received === out.length) ? out : out.slice(0, received);
+  // サイズ不明・不一致の場合は連結
+  const merged = new Uint8Array(received);
+  let pos = 0;
+  for (const c of chunks) { merged.set(c, pos); pos += c.length; }
+  return merged;
+}
+
+async function loadFromDrive() {
+  if (CONFIG.CLIENT_ID.startsWith('ここに') || CONFIG.FOLDER_ID.startsWith('ここに')) {
+    setStatus('コード冒頭のCONFIG（クライアントIDとフォルダID）を設定してください');
+    return;
+  }
+  const btn = document.getElementById('b-drive');
+  let token;
+  try {
+    token = await getToken();   // ログイン（計測対象外）
+  } catch (e) {
+    setStatus(`ログイン失敗: ${e.message}`);
+    return;
+  }
+  btn.disabled = true;
+  try {
+    setStatus('フォルダ内のファイルを確認中…');
+    const files = await listFolder(token);
+    const assigned = {};
+    for (const f of files) {
+      const ext = f.name.split('.').pop().toLowerCase();
+      const head = (ext === 'ply') ? await fetchHead(f.id, token) : '';
+      const key = detectSlot(f.name, head);
+      if (key && !assigned[key]) assigned[key] = f;
+    }
+    if (Object.keys(assigned).length === 0) {
+      setStatus('フォルダ内に対象ファイルが見つかりませんでした');
+      return;
+    }
+
+    // 1ファイルずつ順番に計測（回線を取り合わないように）
+    for (const s of SLOTS) {
+      const f = assigned[s.key];
+      if (!f) continue;
+      unloadSlot(s.key);   // メモリ節約のため、先に古いデータを消す
+      setStatus(`ダウンロード中: ${f.name}`);
+      try {
+        const t0 = performance.now();
+        const bytes = await downloadDrive(f, token, (r, t) => {
+          const pct = t ? ` ${Math.floor(r / t * 100)}%` : '';
+          setStatus(`ダウンロード中: ${f.name}${pct}（${(r / 1048576).toFixed(1)}MB）`);
+        });
+        const dlMs = performance.now() - t0;
+        setStatus(`展開中: ${f.name}`);
+        await loadBuffer(s.key, f.name, bytes, dlMs);
+      } catch (e) {
+        console.error(e);
+        setStatus(`失敗: ${f.name}（${e.message}）`);
+      }
+    }
+    const missing = SLOTS.filter((s) => !assigned[s.key]).map((s) => s.short);
+    setStatus('Driveからの読み込み完了' + (missing.length ? `（見つからない枠: ${missing.join(', ')}）` : ''));
+  } catch (e) {
+    console.error(e);
+    setStatus(`エラー: ${e.message}`);
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+// ================== 読み込み処理 ==================
+async function loadLocal(key, file) {
+  setStatus(`読み込み中: ${file.name}`);
+  try {
+    const bytes = new Uint8Array(await file.arrayBuffer());
+    await loadBuffer(key, file.name, bytes, null);
+    setStatus(`読み込み完了: ${file.name}`);
+  } catch (e) {
+    console.error(e);
+    setStatus(`読み込み失敗: ${file.name}（${e.message}）`);
+  }
+}
+
+// データを解析して表示（ここからが「展開」時間）
+async function loadBuffer(key, name, bytes, dlMs) {
+  const slot = SLOT_MAP[key];
+  const ext = name.split('.').pop().toLowerCase();
+  const sizeMB = bytes.byteLength / (1024 * 1024);
+  const t0 = performance.now();
+  let obj;
+  if (slot.type === 'gs') {
+    if (!SplatMesh) throw new Error('3DGSライブラリが使えません');
+    obj = new SplatMesh({ fileBytes: bytes, fileName: name });
+    await obj.initialized;
+  } else {
+    obj = await makeMesh(bytes.buffer, ext);
+  }
+  const decMs = performance.now() - t0;
+
+  unloadSlot(key);
+  const isFirst = !Object.values(layers).some(Boolean);
+  obj.position.copy(offset);
+  layers[key] = obj;
+  model.add(obj);
+
+  stats[key] = { sizeMB, dlMs, decMs, count: countOf(slot.type, obj), fps: null };
+
+  applyWireframe();
+  setView(key);
+  if (isFirst) {
+    centerPivot();
+    model.position.set(0, 0, 0);
+    fitView();
+  }
+  updateInfo();
+}
+
+function unloadSlot(key) {
+  if (!layers[key]) return;
+  model.remove(layers[key]);
+  disposeObject(layers[key]);
+  layers[key] = null;
+  stats[key] = null;
+  renderStats();
+}
+
+async function makeMesh(buf, ext) {
+  if (ext === 'ply') {
+    const geom = new PLYLoader().parse(buf);
+    if (!geom.index) throw new Error('面情報のないPLYです（メッシュではありません）');
+    if (!geom.attributes.normal) geom.computeVertexNormals();
+    const hasColor = !!geom.attributes.color;
+    const mat = new THREE.MeshStandardMaterial({
+      vertexColors: hasColor, color: hasColor ? 0xffffff : 0xbbbbbb,
+      roughness: 0.9, metalness: 0.0, side: THREE.DoubleSide
+    });
+    return new THREE.Mesh(geom, mat);
+  }
+  if (ext === 'obj') {
+    return new OBJLoader().parse(new TextDecoder().decode(buf));
+  }
+  if (ext === 'glb') {
+    const gltf = await new GLTFLoader().parseAsync(buf, '');
+    return gltf.scene;
+  }
+  throw new Error('未対応の形式です（.ply / .obj / .glb）');
+}
+
+function countOf(type, obj) {
+  if (type === 'gs') {
+    const n = obj.packedSplats?.numSplats ?? obj.numSplats;
+    return (n != null) ? n : null;
+  }
+  let tri = 0;
+  obj.traverse((o) => {
+    if (o.isMesh) {
+      const g = o.geometry;
+      tri += g.index ? g.index.count / 3 : g.attributes.position.count / 3;
+    }
+  });
+  return tri;
+}
+
+function disposeObject(obj) {
+  if (obj.dispose) { obj.dispose(); return; }
+  obj.traverse((o) => {
+    if (o.geometry) o.geometry.dispose();
+    if (o.material) [].concat(o.material).forEach((m) => m.dispose());
+  });
+}
+
+// ファイル名とPLYヘッダーから振り分け先を判定
+function detectSlot(name, head) {
+  const ext = name.split('.').pop().toLowerCase();
+  const isLow = /simplified/i.test(name);
+  if (ext === 'spz') return 'spz';
+  if (ext === 'sog') return 'sog';
+  if (ext === 'obj' || ext === 'glb') return isLow ? 'meshLo' : 'meshHi';
+  if (ext === 'ply') {
+    const h = (head || '').split('end_header')[0];
+    if (/f_dc_0|packed_position/.test(h)) return 'ply';
+    const m = h.match(/element\s+face\s+(\d+)/);
+    if (m && Number(m[1]) > 0) return isLow ? 'meshLo' : 'meshHi';
+  }
+  return null;
+}
+
+// ================== 表示切替 ==================
+function setView(view) {
+  currentView = view;
+  for (const [k, o] of Object.entries(layers)) {
+    if (o) o.visible = (view === 'all' || view === k);
+  }
+  document.querySelectorAll('#view-btns button').forEach((b) => {
+    b.classList.toggle('active', b.dataset.view === view);
+    if (b.dataset.view !== 'all') b.classList.toggle('empty', !layers[b.dataset.view]);
+  });
+  const name = (view === 'all') ? '全部' : SLOT_MAP[view].short;
+  document.getElementById('sw-label').textContent =
+    (view !== 'all' && !layers[view]) ? `${name}（未読込）` : name;
+  fpsSkip = true;
+  renderStats();
+}
+
+function cycleView(dir) {
+  const loaded = SLOTS.filter((s) => layers[s.key]).map((s) => s.key);
+  if (loaded.length === 0) return;
+  let i = loaded.indexOf(currentView);
+  i = (i < 0) ? 0 : (i + dir + loaded.length) % loaded.length;
+  setView(loaded[i]);
+}
+
+// ================== 比較表 ==================
+function renderStats() {
+  const fmt = (n) => (n == null ? '-' : Math.round(n).toLocaleString());
+  const sec = (ms) => (ms == null ? '-' : (ms / 1000).toFixed(2));
+  const rows = SLOTS.map((s) => {
+    const st = stats[s.key];
+    const cls = (s.key === currentView) ? ' class="cur"' : '';
+    return `<tr${cls}><td>${s.short}</td>` +
+      `<td>${st ? st.sizeMB.toFixed(1) : '-'}</td>` +
+      `<td>${st ? sec(st.dlMs) : '-'}</td>` +
+      `<td>${st ? sec(st.decMs) : '-'}</td>` +
+      `<td>${st ? fmt(st.count) : '-'}</td>` +
+      `<td>${st && st.fps != null ? st.fps.toFixed(1) : '-'}</td></tr>`;
+  }).join('');
+  document.getElementById('stats').innerHTML =
+    '<tr><th>種類</th><th>MB</th><th>DL s</th><th>展開s</th><th>要素数</th><th>fps</th></tr>' + rows;
+}
+
+function resetFpsRecords() {
+  for (const st of Object.values(stats)) if (st) st.fps = null;
+  fpsSkip = true;
+  renderStats();
+}
+
+// ================== fps計測 ==================
+const fpsEl = document.getElementById('fps');
+let fpsFrames = 0;
+let fpsLast = performance.now();
+let fpsSkip = true;
+
+function tickFps() {
+  fpsFrames++;
+  const now = performance.now();
+  const dt = now - fpsLast;
+  if (dt < 500) return;
+  const fps = fpsFrames * 1000 / dt;
+  const ms = dt / fpsFrames;
+  const c = renderer.domElement;
+  fpsEl.innerHTML = `${fps.toFixed(1)} fps<br><small>${ms.toFixed(2)} ms ・ ${c.width}×${c.height}px</small>`;
+  if (!fpsSkip && currentView !== 'all' && stats[currentView]) {
+    const st = stats[currentView];
+    st.fps = (st.fps == null) ? fps : st.fps * 0.8 + fps * 0.2;
+    renderStats();
+  }
+  fpsSkip = false;
+  fpsFrames = 0;
+  fpsLast = now;
+}
+
+// ================== 操作モード ==================
+function setMode(mode) {
+  tc.setMode(mode);
+  document.querySelectorAll('#mode-btns button').forEach((b) =>
+    b.classList.toggle('active', b.dataset.mode === mode));
+}
+function toggleSpace() {
+  tc.setSpace(tc.space === 'local' ? 'world' : 'local');
+  document.getElementById('b-space').textContent =
+    `座標系: ${tc.space === 'local' ? 'ローカル' : 'ワールド'} [Q]`;
+}
+function toggleGizmo() {
+  const helper = tc.getHelper();
+  helper.visible = !helper.visible;
+  tc.enabled = helper.visible;
+  document.getElementById('b-gizmo').textContent = `ギズモ ${helper.visible ? 'ON' : 'OFF'} [H]`;
+}
+
+// ================== 範囲計算・視点合わせ ==================
+function worldBox() {
+  model.updateMatrixWorld(true);
+  const box = new THREE.Box3();
+  for (const [k, o] of Object.entries(layers)) {
+    if (!o) continue;
+    if (SLOT_MAP[k].type === 'gs') {
+      const b = o.getBoundingBox ? o.getBoundingBox() : null;
+      if (b && !b.isEmpty()) box.union(b.clone().applyMatrix4(o.matrixWorld));
+    } else {
+      box.expandByObject(o);
+    }
+  }
+  return box.isEmpty() ? null : box;
+}
+
+function fitView() {
+  const box = worldBox();
+  if (!box) return;
+  const center = box.getCenter(new THREE.Vector3());
+  const size = Math.max(box.getSize(new THREE.Vector3()).length(), 0.1);
+  orbit.target.copy(center);
+  camera.position.copy(center).add(new THREE.Vector3(0.6, 0.5, 1).normalize().multiplyScalar(size * 0.9));
+  camera.near = size / 1000;
+  camera.far = size * 100;
+  camera.updateProjectionMatrix();
+  orbit.update();
+}
+
+function centerPivot() {
+  const box = worldBox();
+  if (!box) return;
+  const worldCenter = box.getCenter(new THREE.Vector3());
+  const localCenter = model.worldToLocal(worldCenter.clone());
+  offset.sub(localCenter);
+  for (const o of Object.values(layers)) if (o) o.position.copy(offset);
+  model.position.copy(worldCenter);
+  model.updateMatrixWorld(true);
+  updateInfo();
+}
+
+// ================== 表示設定 ==================
+function applyWireframe() {
+  const on = document.getElementById('c-wire').checked;
+  for (const s of SLOTS) {
+    if (s.type !== 'mesh' || !layers[s.key]) continue;
+    layers[s.key].traverse((o) => {
+      if (o.material) [].concat(o.material).forEach((m) => { m.wireframe = on; });
+    });
+  }
+}
+
+function updateInfo() {
+  const p = model.position, r = model.rotation, s = model.scale;
+  const d = THREE.MathUtils.radToDeg;
+  const f = (v) => v.toFixed(3).padStart(8);
+  const g = (v) => d(v).toFixed(1).padStart(8);
+  document.getElementById('info').textContent =
+    `位置  X${f(p.x)} Y${f(p.y)} Z${f(p.z)}\n` +
+    `回転° X${g(r.x)} Y${g(r.y)} Z${g(r.z)}\n` +
+    `拡大  X${f(s.x)} Y${f(s.y)} Z${f(s.z)}`;
+}
+
+function setStatus(msg) {
+  const el = document.getElementById('status');
+  if (el) el.textContent = msg;
+}
+
+// ================== UIイベント ==================
+document.getElementById('b-drive').addEventListener('click', loadFromDrive);
+document.getElementById('sw-prev').addEventListener('click', () => cycleView(-1));
+document.getElementById('sw-next').addEventListener('click', () => cycleView(1));
+document.querySelectorAll('#mode-btns button').forEach((b) =>
+  b.addEventListener('click', () => setMode(b.dataset.mode)));
+document.getElementById('b-space').addEventListener('click', toggleSpace);
+document.getElementById('b-gizmo').addEventListener('click', toggleGizmo);
+document.getElementById('b-flip').addEventListener('click', () => {
+  model.rotateX(Math.PI);
+  updateInfo();
+});
+document.getElementById('b-center').addEventListener('click', centerPivot);
+document.getElementById('b-reset').addEventListener('click', () => {
+  model.position.set(0, 0, 0);
+  model.rotation.set(0, 0, 0);
+  model.scale.set(1, 1, 1);
+  updateInfo();
+});
+document.getElementById('b-fit').addEventListener('click', fitView);
+document.getElementById('b-fps-reset').addEventListener('click', resetFpsRecords);
+document.getElementById('s-dpr').addEventListener('change', (e) => {
+  renderer.setPixelRatio(Number(e.target.value));
+  renderer.setSize(window.innerWidth, window.innerHeight);
+  resetFpsRecords();
+});
+document.getElementById('c-wire').addEventListener('change', applyWireframe);
+document.getElementById('c-grid').addEventListener('change', (e) => {
+  grid.visible = axes.visible = e.target.checked;
+});
+
+window.addEventListener('keydown', (e) => {
+  if (e.target.tagName === 'INPUT' || e.target.tagName === 'SELECT') return;
+  const k = e.key.toLowerCase();
+  if (k >= '1' && k <= String(SLOTS.length)) { setView(SLOTS[Number(k) - 1].key); return; }
+  switch (k) {
+    case '0': setView('all'); break;
+    case 'arrowright': cycleView(1); break;
+    case 'arrowleft': cycleView(-1); break;
+    case 'w': setMode('translate'); break;
+    case 'e': setMode('rotate'); break;
+    case 'r': setMode('scale'); break;
+    case 'q': toggleSpace(); break;
+    case 'h': toggleGizmo(); break;
+    case 'f': fitView(); break;
+  }
+});
+
+window.addEventListener('dragover', (e) => e.preventDefault());
+window.addEventListener('drop', async (e) => {
+  e.preventDefault();
+  for (const file of e.dataTransfer.files) {
+    const head = new TextDecoder().decode(await file.slice(0, 8192).arrayBuffer());
+    const key = detectSlot(file.name, head);
+    if (key) await loadLocal(key, file);
+    else setStatus(`未対応の形式: ${file.name}`);
+  }
+});
+
+window.addEventListener('resize', () => {
+  camera.aspect = window.innerWidth / window.innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(window.innerWidth, window.innerHeight);
+});
+
+// ================== 初期化・描画ループ ==================
+setView('ply');
+setMode('translate');
+updateInfo();
+renderStats();
+renderer.setAnimationLoop(() => {
+  orbit.update();
+  renderer.render(scene, camera);
+  tickFps();
+});
+</script>
+</body>
+</html>
